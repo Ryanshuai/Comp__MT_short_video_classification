@@ -5,6 +5,39 @@ import torch.nn.functional as F
 import math
 
 
+class ContextGating(nn.Module):
+    def __init__(self,
+                 input_size: int,
+                 remove_diag: bool,
+                 add_BN: bool,
+                 ):
+        super().__init__()
+        self.remove_diag = remove_diag
+        self.add_BN = add_BN
+        if add_BN:
+            self.bn = nn.BatchNorm1d(input_size)
+            self.fc = nn.Linear(input_size, input_size, bias=False)
+        else:
+            self.fc = nn.Linear(input_size, input_size)
+
+    def forward(self,
+                net_in: tensor
+                ):
+        gates = self.fc(net_in)
+
+        if self.remove_diag:
+            gating_weights = list(self.fc.parameters())[0]
+            diagonals = gating_weights.diag()
+            gates = gates - torch.mul(net_in, diagonals)
+
+        if self.add_BN:
+            gates = self.bn(gates)
+
+        gates = F.sigmoid(gates)
+        net_out = torch.mul(net_in, gates)
+        return net_out
+
+
 class NetVLAD(nn.Module):
     def __init__(self,
                  k: int,  # k means center number
@@ -25,7 +58,7 @@ class NetVLAD(nn.Module):
         self.softmax = nn.Softmax(dim=2)
 
     def forward(self,
-                net_in: tensor,                     # shape == [bs, n, d]
+                net_in: tensor,                            # shape == [bs, n, d]
                 ):
         x = net_in
         n = x.shape()[1]
@@ -42,7 +75,7 @@ class NetVLAD(nn.Module):
         k_mean = k_mean.unsqueeze(dim=0)                   # shape == [1, 1, k, d]
         core = x - k_mean                                  # shape == [bs, n, k, d]
 
-        x_sub_c = activation*core                          # shape == [bs, n, k, d]
+        x_sub_c = torch.mul(activation, core)              # shape == [bs, n, k, d]
         v = torch.sum(x_sub_c, 1)                          # shape == [bs, k, d]
         v = F.normalize(v, dim=2)                          # shape == [bs, k, d]
         v = v.view(v.size(0), -1)                          # shape == [bs, k*d]
