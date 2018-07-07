@@ -7,8 +7,12 @@ import torch.nn.functional as F
 class NetVLAD(nn.Module):
     def __init__(self, k: int,  # k means center number
                  d: int,  # feature dim
+                 add_BN: bool,
                  ):
         super().__init__()
+        self.add_BN = add_BN
+        if self.add_BN:
+            belong_BN = nn.BatchNorm1d()
         self.fc = nn.Linear(d, k)
         self.k_mean = torch.rand(k, d, requires_grad=True)
         self.softmax = nn.Softmax(dim=2)
@@ -17,6 +21,8 @@ class NetVLAD(nn.Module):
                 ):
         x = net_in
         belong = self.fc(x)                     # shape == [bs, n, k]
+        if self.add_BN:
+            belong =
         belong = self.softmax(belong)           # shape == [bs, n, k]
         belong = belong.unsqueeze(dim=3)        # shape == [bs, n, k, 1]
 

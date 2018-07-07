@@ -1,3 +1,4 @@
 
 
-import layers
+from layers import NetVLAD
+
