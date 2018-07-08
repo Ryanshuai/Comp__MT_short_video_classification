@@ -19,6 +19,8 @@ class ContextGating(nn.Module):
             self.fc = nn.Linear(input_size, input_size, bias=False)
         else:
             self.fc = nn.Linear(input_size, input_size)
+            nn.init.xavier_normal(self.fc.bias)
+        nn.init.xavier_normal(self.fc.weight)
 
     def forward(self,
                 net_in: tensor
@@ -26,7 +28,7 @@ class ContextGating(nn.Module):
         gates = self.fc(net_in)
 
         if self.remove_diag:
-            gating_weights = list(self.fc.parameters())[0]
+            gating_weights = self.fc.weight
             diagonals = gating_weights.diag()
             gates = gates - torch.mul(net_in, diagonals)
 
@@ -53,6 +55,8 @@ class NetVLAD(nn.Module):
             self.fc = nn.Linear(d, k, bias=False)
         else:
             self.fc = nn.Linear(d, k)
+            nn.init.xavier_normal(self.fc.bias)
+        nn.init.xavier_normal(self.fc.weight)
         stddev = 1 / math.sqrt(d)
         self.k_mean = torch.randn(k, d, requires_grad=True)*stddev
         self.softmax = nn.Softmax(dim=2)
