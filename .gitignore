@@ -3,3 +3,4 @@
 *.iml
 *.xml
 *.xml
+dataloader/__pycache__/ucf101_dataset.cpython-36.pyc
