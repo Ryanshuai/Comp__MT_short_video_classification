@@ -8,6 +8,7 @@ import math
 class ContextGating(nn.Module):
     def __init__(self,
                  input_size: int,
+                 output_size: int,
                  remove_diag: bool,
                  add_BN: bool,
                  ):
@@ -16,16 +17,17 @@ class ContextGating(nn.Module):
         self.add_BN = add_BN
         if add_BN:
             self.bn = nn.BatchNorm1d(input_size)
-            self.fc = nn.Linear(input_size, input_size, bias=False)
+            self.fc = nn.Linear(input_size, output_size, bias=False)
         else:
-            self.fc = nn.Linear(input_size, input_size)
+            self.fc = nn.Linear(input_size, output_size)
             nn.init.xavier_normal(self.fc.bias)
         nn.init.xavier_normal(self.fc.weight)
 
     def forward(self,
-                net_in: tensor
+                net_in: tensor,
+                gate_in: tensor, # gate_in can be same with net_in
                 ):
-        gates = self.fc(net_in)
+        gates = self.fc(gate_in)
 
         if self.remove_diag:
             gating_weights = self.fc.weight
@@ -86,3 +88,72 @@ class NetVLAD(nn.Module):
         v = F.normalize(v, dim=1)                          # shape == [bs, k*d]
 
         return v
+
+
+class MoE(nn.Module):
+    def __init__(self,
+                 feature_size: int,
+                 num_classes: int,
+                 num_mixture: int, # default is 2
+                 low_rank_gating: int, # default is -1
+                 gating_prob: bool,
+                 gating_input_prob: bool,
+                 remove_diag: bool
+                 ):
+        super().__init__()
+        self.num_mixture = num_mixture
+        self.num_class = num_classes
+        self.low_rank_gating = low_rank_gating
+        self.gating_prob = gating_prob
+        self.gating_input_prob = gating_input_prob
+
+        # gating of expert
+        output_size = num_classes * (num_mixture + 1)
+        if low_rank_gating == -1:
+            self.gating_activation_fc = nn.Linear(feature_size, output_size) # ??? the weight needs to be penalty by l2_regularizer
+        else:
+            self.gating_activation_fc1 = nn.Linear(feature_size, low_rank_gating) # the weight needs to be penalty by l2_regularizer
+            self.gating_activation_fc = nn.Linear(low_rank_gating, output_size) # the weight needs to be penalty by l2_regularizer
+        self.gating_distributionn_softmax = nn.Softmax()
+
+        # experts
+        self.expert_activation = nn.Linear(feature_size, num_classes * num_mixture) # the weight needs to be penalty by l2_regularizer
+        self.expert_distrubition_sigmoid = nn.Sigmoid()
+
+        if gating_prob:
+            if gating_input_prob == 'prob':
+                self.context_gating = ContextGating(num_classes, num_classes,remove_diag, True)
+            else:
+                self.context_gating = ContextGating(feature_size, num_classes, remove_diag, True)
+
+
+    def forward(self,
+                net_in: tensor,                            # shape == [bs, d]
+                ):
+
+        # gating of expert
+        if self.low_rank_gating == -1:
+            gate_activations = self.gating_activation_fc(net_in)
+        else:
+            g = self.gating_activation_fc1(net_in)
+            gate_activations = self.gating_activation_fc(g)
+            # [bs, num_class *(num_mixture+1)]
+        gatint_distribution = self.gating_distributionn_softmax(gate_activations.view(-1, self.num_mixture+1))  #[bs * num_class , num_mixture+1]
+
+        # expert
+        expert_activation = self.expert_activation(net_in)  # [bs, num_class * num_mixture]
+        expert_distribution = self.expert_distrubition_sigmoid(expert_activation.view(-1, self.num_mixture)) # [bs * num_class, num_mixture]
+
+        # prob
+        prob_by_class_and_batch = nn.sum(
+                    gatint_distribution[:, :self.num_mixtures] * expert_distribution, 1) # [bs*num_class,1]
+
+        prob = prob_by_class_and_batch.view(-1,self.num_class) # [bs, num_class]
+
+        if self.gating_prob:
+            if self.gating_input_prob == 'prob':
+                probabilities = self.context_gating(net_in=prob, gate_in=prob)
+            else:
+                probabilities = self.context_gating(net_in=prob, gate_in=net_in) # [bs, num_class]
+                
+        return probabilities
