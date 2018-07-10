@@ -152,8 +152,8 @@ class MoE(nn.Module):
 
         if self.gating_prob:
             if self.gating_input_prob == 'prob':
-                probabilities = self.context_gating(net_in=prob, gate_in=prob)
+                probabilities = self.context_gating.forward(net_in=prob, gate_in=prob)
             else:
-                probabilities = self.context_gating(net_in=prob, gate_in=net_in) # [bs, num_class]
+                probabilities = self.context_gating.forward(net_in=prob, gate_in=net_in) # [bs, num_class]
                 
         return probabilities
